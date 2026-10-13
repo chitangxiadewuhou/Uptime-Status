@@ -1,3 +1,9 @@
+// api/status.js
+// UptimeRobot v3 API 代理函数
+// 【安全加固说明】
+// 1. 彻底移除 VITE_ 前缀的环境变量读取，API Key 仅限服务端使用。
+// 2. 数据返回前端前，强制清空 url / host / port / ip 字段，防止源站 IP 泄露。
+
 const API = 'https://api.uptimerobot.com/v3'
 const DAY30 = 30 * 24 * 60 * 60 * 1000
 export const CACHE_TTL_MS = 5 * 60 * 1000
@@ -13,7 +19,12 @@ export class RateLimitError extends Error {
 const trim = (v) => v?.replace(/^["']|["']$/g, '').trim()
 const absUrl = (path) => path.startsWith('http') ? path : `${API}${path.startsWith('/') ? path : `/${path}`}`
 
-const keyOf = (o = {}) => trim(o.apiKey) || trim(o.api_key)  || trim(o?.env?.UPTIMEROBOT_API_KEY) || trim(o?.env?.VITE_UPTIMEROBOT_API_KEY)  || trim(process.env.UPTIMEROBOT_API_KEY) || trim(process.env.VITE_UPTIMEROBOT_API_KEY)
+// 【安全修改】仅从服务端环境变量读取 Key，坚决不读 VITE_ 前缀的变量
+const keyOf = (o = {}) => 
+  trim(o.apiKey) || 
+  trim(o.api_key) || 
+  trim(o?.env?.UPTIMEROBOT_API_KEY) || 
+  trim(process.env.UPTIMEROBOT_API_KEY)
 
 async function get(apiKey, url) {
   const res = await fetch(url, {
@@ -64,12 +75,22 @@ export async function fetchMonitorStatus({ apiKey } = {}) {
     paginate(key, `/incidents?started_after=${encodeURIComponent(since)}`)
   ])
   const byMonitor = mergeIncidents(incidents, monitors)
+  
+  // 【安全修改】在返回数据前，清洗掉所有可能暴露源站的信息
   return {
-    monitors: monitors.map((m) => ({
-      ...m,
-      incidents: byMonitor.get(m.id) || [],
-      responseTimeStats: null
-    }))
+    monitors: monitors.map((m) => {
+      // 使用解构赋值，剔除敏感字段
+      const { url, host, port, ip, ...safeData } = m;
+      return {
+        ...safeData,
+        url: '',   // 清空链接
+        host: '',  // 清空主机
+        port: '',  // 清空端口
+        ip: '',    // 清空 IP
+        incidents: byMonitor.get(m.id) || [],
+        responseTimeStats: null
+      };
+    })
   }
 }
 
